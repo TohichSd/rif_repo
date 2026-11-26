@@ -1,5 +1,0 @@
-image:
-  repository: registry.example.com/rif-practice
-  tag: example
-imagePullSecret: rif-registry
-databaseSecret: rif-database
