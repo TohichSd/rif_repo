@@ -2,9 +2,16 @@
 
 Репозиторий для Д/З 1 по разработке информационных систем.
 
-## Автоматическая сборка
+## Кейс 3. CircleCI и Heroku
 
-GitHub Actions запускает CI при каждом пуше в ветку. Job **Test and build** выполняет пять юнит-тестов, собирает исполняемый архив Python `app.pyz` и прикрепляет его к запуску как артефакт `rif-app`.
+Пуш в ветку `main2` запускает workflow **build-and-deploy**. Стадия **build** запускает тесты и собирает `app.pyz`. Стадия **deploy** отправляет проверенный коммит в Heroku и проверяет ответ `/health`.
+
+1. В Heroku подготовьте отдельное приложение поколения **Cedar** с поддержкой Heroku Git и запущенным процессом **web**. Возьмите имя приложения и его точный HTTPS-адрес из Dashboard. Условия использования dyno зависят от выбранного плана. [Heroku Git](https://devcenter.heroku.com/articles/git)
+2. В [CircleCI](https://app.circleci.com/) подключите этот GitHub-репозиторий. Выберите `.circleci/config.yml` как конфигурацию и **All pushes** как событие запуска. Фильтр в конфигурации оставляет сборку и деплой для ветки `main2`. [Настройка проекта CircleCI](https://circleci.com/docs/guides/getting-started/create-project/)
+3. В **Project Settings → Environment Variables** сохраните `HEROKU_APP_NAME`, `HEROKU_APP_URL` и `HEROKU_API_KEY`. Сохраните API-ключ только в настройках CircleCI.
+4. После подключения сделайте новый коммит в `main2` и отправьте его в GitHub. Проверьте зелёные задания **build** и **deploy**, затем откройте `/health` на адресе Heroku. Приложение вернёт `{"status": "ok"}`.
+
+Для сдачи приложите скриншот успешного workflow в CircleCI и скриншот ответа `/health` с адресом приложения.
 
 ## Локальный запуск в PowerShell
 

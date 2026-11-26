@@ -1,0 +1,62 @@
+version: 2.1
+
+jobs:
+  build:
+    docker:
+      - image: cimg/python:3.12
+    environment:
+      PYTHONPATH: src
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - checkout
+      - run:
+          name: Run unit tests
+          command: python -m unittest discover -s tests -v
+      - run:
+          name: Build app.pyz
+          command: |
+            mkdir -p dist
+            python -m zipapp src -m app:main -o dist/app.pyz
+            python -m zipfile -t dist/app.pyz
+      - store_artifacts:
+          path: dist/app.pyz
+          destination: app.pyz
+
+  deploy:
+    docker:
+      - image: cimg/python:3.12
+    steps:
+      - checkout:
+          method: full
+      - run:
+          name: Deploy the commit to Heroku
+          command: bash scripts/push-heroku.sh
+      - run:
+          name: Check Heroku /health
+          command: |
+            response="$(curl --fail --silent --show-error --retry 6 --retry-all-errors \
+              --retry-delay 3 --connect-timeout 5 --max-time 15 -- "${HEROKU_APP_URL%/}/health")"
+            printf '%s\n' "$response" | python -c '
+            import json
+            import sys
+
+            result = json.load(sys.stdin)
+            if result != {"status": "ok"}:
+                sys.exit(f"Unexpected health response: {result!r}")
+            print(result)
+            '
+
+workflows:
+  build-and-deploy:
+    jobs:
+      - build:
+          filters:
+            branches:
+              only: main2
+      - deploy:
+          requires:
+            - build
+          serial-group: << pipeline.project.slug >>/heroku
+          filters:
+            branches:
+              only: main2
