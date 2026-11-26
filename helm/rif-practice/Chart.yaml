@@ -1,0 +1,5 @@
+apiVersion: v2
+name: rif-practice
+description: CI/CD practice service with a pre-deploy Alembic migration
+type: application
+version: 0.1.0

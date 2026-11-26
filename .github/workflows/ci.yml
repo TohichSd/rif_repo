@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONPATH: src
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  build:
+    name: Test and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s tests -v
+      - run: |
+          mkdir -p dist
+          python -m zipapp src -m app:main -o dist/app.pyz
+      - uses: actions/upload-artifact@v6
+        with:
+          name: rif-app
+          path: dist/app.pyz
+          if-no-files-found: error
+
+  quality:
+    name: Ruff and Bandit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-ci.txt
+      - run: python -m ruff check src tests migrations
+      - name: Scan Python code
+        if: ${{ !cancelled() }}
+        run: python -m bandit -r src migrations
+
+  migration:
+    name: Container and PostgreSQL
+    runs-on: ubuntu-latest
+    env:
+      APP_IMAGE: rif-practice:ci
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Build and start PostgreSQL
+        run: |
+          docker build --tag "$APP_IMAGE" .
+          docker compose up -d --wait --wait-timeout 90 db
+      - name: Apply the migration and verify that a retry is safe
+        run: |
+          docker compose run --rm migrate
+          docker compose run --rm migrate
+          result=$(docker compose exec -T db psql -U practice -d practice -Atc \
+            "SELECT version_num FROM alembic_version WHERE to_regclass('public.practice_items') IS NOT NULL")
+          test "$result" = "0001"
+      - name: Check the deployed container
+        run: |
+          docker compose up -d --wait --wait-timeout 90 web
+          curl --fail --silent --show-error http://127.0.0.1:8088/health
+      - name: Stop test containers
+        if: ${{ always() }}
+        run: docker compose down --volumes
+
+  notify:
+    name: Notify Slack
+    needs: [build, quality, migration]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      BUILD_RESULT: ${{ needs.build.result }}
+      QUALITY_RESULT: ${{ needs.quality.result }}
+      MIGRATION_RESULT: ${{ needs.migration.result }}
+    steps:
+      - name: Check whether a Slack channel is configured
+        if: ${{ env.SLACK_WEBHOOK_URL == '' }}
+        run: echo 'Add SLACK_WEBHOOK_URL in repository Actions secrets to enable notifications.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Send pipeline status
+        if: ${{ env.SLACK_WEBHOOK_URL != '' }}
+        run: |
+          if [[ "$BUILD_RESULT" == success && "$QUALITY_RESULT" == success && "$MIGRATION_RESULT" == success ]]; then
+            status=SUCCESS
+          else
+            status=FAILED
+          fi
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          jq -n --arg text "CI $status | $GITHUB_REPOSITORY @ ${GITHUB_SHA:0:7} | $run_url" \
+            '{text: $text}' | curl --fail-with-body --silent --show-error --max-time 20 \
+            --header 'Content-Type: application/json' --data-binary @- "$SLACK_WEBHOOK_URL"

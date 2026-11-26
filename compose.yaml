@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: practice
+      POSTGRES_PASSWORD: practice-local
+      POSTGRES_DB: practice
+    volumes:
+      - practice-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "practice", "-d", "practice"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  migrate:
+    image: ${APP_IMAGE:?Set APP_IMAGE to the built image}
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql://practice:practice-local@db:5432/practice
+  web:
+    image: ${APP_IMAGE:?Set APP_IMAGE to the built image}
+    ports:
+      - "127.0.0.1:${APP_PORT:-8088}:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8080/health', timeout=2).close()"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  practice-db:

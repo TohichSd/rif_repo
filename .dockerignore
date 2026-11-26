@@ -1,0 +1,10 @@
+**
+!src/
+!src/app.py
+!requirements-runtime.txt
+!alembic.ini
+!migrations/
+!migrations/env.py
+!migrations/script.py.mako
+!migrations/versions/
+!migrations/versions/*.py

@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags: ['**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      PYTHONPATH: src
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s tests -v
+      - name: Build release artifacts
+        run: |
+          mkdir -p dist
+          python -m zipapp src -m app:main -o dist/app.pyz
+          (cd dist && sha256sum app.pyz > SHA256SUMS)
+      - name: Publish release with changelog
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view -- "$TAG" >/dev/null 2>&1; then
+            gh release upload --clobber -- "$TAG" dist/app.pyz dist/SHA256SUMS
+          else
+            gh release create --verify-tag --generate-notes --title "$TAG" -- \
+              "$TAG" dist/app.pyz dist/SHA256SUMS
+          fi
